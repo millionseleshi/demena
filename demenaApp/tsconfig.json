@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "target": "ES2018",
+    "noImplicitAny": false,
+    "preserveConstEnums": true,
+    "outDir": "./built",
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": false
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
