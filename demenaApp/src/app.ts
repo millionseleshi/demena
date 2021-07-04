@@ -1,5 +1,6 @@
 import { Ec2InstanceCreate } from "./ec2InstanceCreate";
 import { EC2Client } from "@aws-sdk/client-ec2";
+import { S3Client } from "@aws-sdk/client-s3";
 
 const awsregion = process.env.AWS_REGION;
 
@@ -16,7 +17,8 @@ export const lambdaHandler = async (event) => {
   const volumeSize: number = body.volumeSize;
 
   const ec2InstanceCreate = new Ec2InstanceCreate(
-    new EC2Client({ region: awsregion })
+    new EC2Client({ region: awsregion }),
+    new S3Client({ region: awsregion })
   );
   await ec2InstanceCreate
     .createEc2Instance(

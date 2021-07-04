@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.lambdaHandler = void 0;
 const ec2InstanceCreate_1 = require("./ec2InstanceCreate");
 const client_ec2_1 = require("@aws-sdk/client-ec2");
+const client_s3_1 = require("@aws-sdk/client-s3");
 const awsregion = process.env.AWS_REGION;
 const lambdaHandler = async (event) => {
     if (event.httpMethod !== "POST") {
@@ -13,7 +14,7 @@ const lambdaHandler = async (event) => {
     const maxCount = body.maxCount;
     const instanceType = body.instanceType;
     const volumeSize = body.volumeSize;
-    const ec2InstanceCreate = new ec2InstanceCreate_1.Ec2InstanceCreate(new client_ec2_1.EC2Client({ region: awsregion }));
+    const ec2InstanceCreate = new ec2InstanceCreate_1.Ec2InstanceCreate(new client_ec2_1.EC2Client({ region: awsregion }), new client_s3_1.S3Client({ region: awsregion }));
     await ec2InstanceCreate
         .createEc2Instance(account, maxCount, instanceType, volumeSize, "ami-09e67e426f25ce0d7")
         .then((result) => {
