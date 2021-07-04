@@ -1,5 +1,5 @@
 {
-  "body": "{ \"account\": \"test\",\"maxCount\":\"1\",\"instanceType\": \"t2.small\", \"volumeSize\": \"20\"}",
+  "body": "{ \"account\": \"test\",\"maxCount\":\"1\",\"vcpu\": \"2\",\"ram\": \"4\",\"volumeSize\": \"20\"}",
   "resource": "/{proxy+}",
   "path": "/",
   "httpMethod": "POST",

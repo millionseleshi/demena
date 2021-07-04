@@ -13,7 +13,8 @@ export const lambdaHandler = async (event) => {
   const body = JSON.parse(event.body);
   const account: string = body.account;
   const maxCount: number = body.maxCount;
-  const instanceType: string = body.instanceType;
+  const vCpu: number = body.vcpu;
+  const ram:number =body.ram;
   const volumeSize: number = body.volumeSize;
 
   const ec2InstanceCreate = new Ec2InstanceCreate(
@@ -24,7 +25,8 @@ export const lambdaHandler = async (event) => {
     .createEc2Instance(
       account,
       maxCount,
-      instanceType,
+      vCpu,
+      ram,
       volumeSize,
       "ami-09e67e426f25ce0d7"
     )

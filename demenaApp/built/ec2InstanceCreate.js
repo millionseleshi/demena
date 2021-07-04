@@ -26,6 +26,31 @@ class Ec2InstanceCreate {
         });
         return { publicKey, privateKey };
     }
+    static async selectInstanceType(vCpu, ram) {
+        if (vCpu == 1 && ram == 0.5) {
+            return "t2.nano";
+        }
+        if (vCpu == 1 && ram == 1) {
+            return "t2.micro";
+        }
+        if (vCpu == 1 && ram == 2) {
+            return "t2.small";
+        }
+        if (vCpu == 2 && ram == 4) {
+            return "t2.medium";
+        }
+        if (vCpu == 2 && ram == 8) {
+            return "t2.large";
+        }
+        if (vCpu == 4 && ram == 16) {
+            return "t2.xlarge";
+        }
+        if (vCpu == 8 && ram == 32) {
+            return "t2.2xlarge";
+        }
+        else
+            throw Error('instance is not found');
+    }
     async CreatEc2KeyPair(account) {
         const encoder = new TextEncoder();
         const { publicKey, privateKey } = await Promise.resolve(Ec2InstanceCreate.rsaKeyPair());
@@ -92,13 +117,14 @@ class Ec2InstanceCreate {
         const listBucketsCommand = new client_s3_1.ListBucketsCommand({});
         return await this.s3client.send(listBucketsCommand);
     }
-    async createEc2Instance(account, maxCount, instanceType, volumeSize, amiId) {
+    async createEc2Instance(account, maxCount, vCpu, ram, volumeSize, amiId) {
         const groupId = await this.CreatEc2SecurityGroup(account).then((result) => {
             return result.GroupId;
         });
         const keyPair = await this.CreatEc2KeyPair(account).then((result) => {
             return result.KeyName;
         });
+        const instanceType = await Ec2InstanceCreate.selectInstanceType(vCpu, ram);
         const runInstancesCommand = new client_ec2_1.RunInstancesCommand({
             MaxCount: maxCount,
             MinCount: 1,
@@ -108,7 +134,7 @@ class Ec2InstanceCreate {
             BlockDeviceMappings: [
                 {
                     Ebs: { VolumeType: "gp2", VolumeSize: volumeSize },
-                    DeviceName: "/dev/sdh",
+                    DeviceName: "/dev/sdh"
                 },
             ],
             SecurityGroupIds: [groupId],
