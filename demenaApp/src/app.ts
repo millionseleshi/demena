@@ -14,7 +14,7 @@ export const lambdaHandler = async (event) => {
   const account: string = body.account;
   const maxCount: number = body.maxCount;
   const vCpu: number = body.vcpu;
-  const ram:number =body.ram;
+  const ram: number = body.ram;
   const volumeSize: number = body.volumeSize;
 
   const ec2InstanceCreate = new Ec2InstanceCreate(

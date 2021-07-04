@@ -27,29 +27,29 @@ class Ec2InstanceCreate {
         return { publicKey, privateKey };
     }
     static async selectInstanceType(vCpu, ram) {
-        if (vCpu == 1 && ram == 0.5) {
+        if (vCpu === 1 && ram === 0.5) {
             return "t2.nano";
         }
-        if (vCpu == 1 && ram == 1) {
+        if (vCpu === 1 && ram === 1) {
             return "t2.micro";
         }
-        if (vCpu == 1 && ram == 2) {
+        if (vCpu === 1 && ram === 2) {
             return "t2.small";
         }
-        if (vCpu == 2 && ram == 4) {
+        if (vCpu === 2 && ram === 4) {
             return "t2.medium";
         }
-        if (vCpu == 2 && ram == 8) {
+        if (vCpu === 2 && ram === 8) {
             return "t2.large";
         }
-        if (vCpu == 4 && ram == 16) {
+        if (vCpu === 4 && ram === 16) {
             return "t2.xlarge";
         }
-        if (vCpu == 8 && ram == 32) {
+        if (vCpu === 8 && ram === 32) {
             return "t2.2xlarge";
         }
         else
-            throw Error('instance is not found');
+            throw Error("instance is not found");
     }
     async CreatEc2KeyPair(account) {
         const encoder = new TextEncoder();
@@ -64,15 +64,30 @@ class Ec2InstanceCreate {
         return this.ec2Client.send(importKeyPairCommand);
     }
     async CreatEc2SecurityGroup(account) {
+        const securityGroupDescription = `${account}_security_group`;
+        const securityGroupName = `${account}_SECURITY_GROUP_NAME`;
         const describeVpcsCommand = await this.ec2Client.send(new client_ec2_1.DescribeVpcsCommand({}));
-        const paramsSecurityGroup = {
-            Description: `${account}_security_group`,
-            GroupName: `${account}_SECURITY_GROUP_NAME`,
-            VpcId: describeVpcsCommand.Vpcs[0].VpcId,
-        };
-        const securityGroupCommand = await this.ec2Client.send(new client_ec2_1.CreateSecurityGroupCommand(paramsSecurityGroup));
-        await this.defineInBoundTraffic(securityGroupCommand);
-        return securityGroupCommand;
+        let securityGroupId;
+        await this.ec2Client
+            .send(new client_ec2_1.DescribeSecurityGroupsCommand({ GroupNames: [securityGroupName] }))
+            .then((result) => {
+            result.SecurityGroups.forEach((securityGroup) => {
+                if (securityGroup.GroupName.toLocaleLowerCase() ==
+                    securityGroupName.toLocaleLowerCase()) {
+                    securityGroupId = securityGroup.GroupId;
+                }
+                else {
+                    this.ec2Client.send(new client_ec2_1.CreateSecurityGroupCommand({
+                        Description: securityGroupDescription,
+                        GroupName: securityGroupName,
+                        VpcId: describeVpcsCommand.Vpcs[0].VpcId,
+                    }));
+                    this.defineInBoundTraffic(securityGroup.GroupId);
+                }
+                securityGroupId = securityGroup.GroupId;
+            });
+        });
+        return securityGroupId;
     }
     async uploadPrivateKeyToS3(account, privateKey) {
         const bucketParams = {
@@ -119,7 +134,7 @@ class Ec2InstanceCreate {
     }
     async createEc2Instance(account, maxCount, vCpu, ram, volumeSize, amiId) {
         const groupId = await this.CreatEc2SecurityGroup(account).then((result) => {
-            return result.GroupId;
+            return result;
         });
         const keyPair = await this.CreatEc2KeyPair(account).then((result) => {
             return result.KeyName;
@@ -134,7 +149,7 @@ class Ec2InstanceCreate {
             BlockDeviceMappings: [
                 {
                     Ebs: { VolumeType: "gp2", VolumeSize: volumeSize },
-                    DeviceName: "/dev/sdh"
+                    DeviceName: "/dev/sdh",
                 },
             ],
             SecurityGroupIds: [groupId],
@@ -151,9 +166,9 @@ class Ec2InstanceCreate {
         });
         await this.s3client.send(putObjectCommand);
     }
-    async defineInBoundTraffic(securityGroupCommand) {
+    async defineInBoundTraffic(groupId) {
         const paramsIngress = {
-            GroupId: securityGroupCommand.GroupId,
+            GroupId: groupId,
             IpPermissions: [
                 {
                     IpProtocol: "tcp",
