@@ -17,7 +17,14 @@ const lambdaHandler = async (event) => {
     const volumeSize = body.volumeSize;
     const ec2InstanceCreate = new ec2InstanceCreate_1.Ec2InstanceCreate(new client_ec2_1.EC2Client({ region: awsregion }), new client_s3_1.S3Client({ region: awsregion }));
     await ec2InstanceCreate
-        .createEc2Instance(account, maxCount, vCpu, ram, volumeSize, "ami-09e67e426f25ce0d7")
+        .createEc2Instance({
+        account: account,
+        maxCount: maxCount,
+        vCpu: vCpu,
+        ram: ram,
+        volumeSize: volumeSize,
+        amiId: "ami-09e67e426f25ce0d7",
+    })
         .then((result) => {
         console.log("Instance ID" + result[0].InstanceId);
     });

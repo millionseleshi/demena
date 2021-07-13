@@ -26,31 +26,6 @@ class Ec2InstanceCreate {
         });
         return { publicKey, privateKey };
     }
-    static async selectInstanceType(vCpu, ram) {
-        if (vCpu == 1 && ram == 0.5) {
-            return "t2.nano";
-        }
-        if (vCpu == 1 && ram == 1) {
-            return "t2.micro";
-        }
-        if (vCpu == 1 && ram == 2) {
-            return "t2.small";
-        }
-        if (vCpu == 2 && ram == 4) {
-            return "t2.medium";
-        }
-        if (vCpu == 2 && ram == 8) {
-            return "t2.large";
-        }
-        if (vCpu == 4 && ram == 16) {
-            return "t2.xlarge";
-        }
-        if (vCpu == 8 && ram == 32) {
-            return "t2.2xlarge";
-        }
-        else
-            throw Error("instance is not found");
-    }
     static importFormattedPublic(publicKey, keyName, encoder) {
         const pemKey = sshpk.parseKey(publicKey, "pem");
         return new client_ec2_1.ImportKeyPairCommand({
@@ -58,35 +33,52 @@ class Ec2InstanceCreate {
             PublicKeyMaterial: encoder.encode(pemKey.toString()),
         });
     }
-    async CreatEc2KeyPair(account) {
-        const keyName = `${account}_key_pair`;
-        const describeKeyPairsCommandOutput = await this.ec2Client.send(new client_ec2_1.DescribeKeyPairsCommand({}));
-        for (const keypair of describeKeyPairsCommandOutput.KeyPairs) {
-            if (keypair.KeyName == keyName) {
-                this.instanceKeyName = keypair.KeyName;
-            }
-            else {
-                this.instanceKeyName = await this.createEc2KeyPairAndImport(account, keyName);
-            }
+    async selectInstanceType(vCpu, ram) {
+        if (vCpu == 1 && ram == 0.5) {
+            this.Ec2InstanceType = 't2.nano';
         }
-        return this.instanceKeyName;
+        else if (vCpu == 1 && ram == 1) {
+            this.Ec2InstanceType = 't2.micro';
+        }
+        else if (vCpu == 1 && ram == 2) {
+            this.Ec2InstanceType = 't2.small';
+        }
+        else if (vCpu == 2 && ram == 4) {
+            this.Ec2InstanceType = 't2.medium';
+        }
+        else if (vCpu == 2 && ram == 8) {
+            this.Ec2InstanceType = 't2.large';
+        }
+        else if (vCpu == 4 && ram == 16) {
+            this.Ec2InstanceType = 't2.xlarge';
+        }
+        else if (vCpu == 8 && ram == 32) {
+            this.Ec2InstanceType = 't2.2xlarge';
+        }
+        else {
+            throw Error("instance is not found");
+        }
+    }
+    async CreatEc2KeyPair(account) {
+        const random = (length = 5) => {
+            return Math.random().toString(16).substr(2, length);
+        };
+        const keyName = `${account}_key_pair_${random()}`;
+        this.instanceKeyName = await this.createEc2KeyPairAndImport(account, keyName);
     }
     async CreatEc2SecurityGroup(account) {
-        const securityGroupDescription = `${account}_security_group`;
-        const securityGroupName = `${account}_SECURITY_GROUP_NAME`;
-        const describeSecurityGroupsCommandOutput = await this.ec2Client.send(new client_ec2_1.DescribeSecurityGroupsCommand({}));
-        for (const securityGroup of describeSecurityGroupsCommandOutput.SecurityGroups) {
-            if (securityGroup.GroupName == securityGroupName) {
-                this.securityGroupId = securityGroup.GroupId;
-            }
-            else {
-                this.securityGroupId = await this.createSecurityIfNotFound(securityGroupDescription, securityGroupName);
-                await this.defineInBoundTraffic(this.securityGroupId);
-            }
-        }
-        return this.securityGroupId;
+        const random = (length = 5) => {
+            return Math.random().toString(16).substr(2, length);
+        };
+        const securityGroupDescription = `${random()}_security_group_for_${account}`;
+        const securityGroupName = `${account}_SECURITY_GROUP_${random(5)}`;
+        this.securityGroupId = await this.createSecurityGroupIfNotFound({
+            securityGroupName,
+            securityGroupDescription,
+        });
+        await this.defineInBoundTraffic(this.securityGroupId);
     }
-    async uploadPrivateKeyToS3(account, privateKey) {
+    async uploadPrivateKeyToS3({ account, privateKey, }) {
         const bucketParams = {
             Bucket: `account-private-key`,
         };
@@ -97,7 +89,12 @@ class Ec2InstanceCreate {
                     this.s3Uploader(account, bucketParams, privateKey);
                 }
                 else {
-                    this.createBucketAndAttachPolicyAndUpload(bucketParams, bucket, account, privateKey);
+                    this.createBucketWithPolicyAndUpload({
+                        bucketParams: bucketParams,
+                        bucket: bucket,
+                        account: account,
+                        privateKey: privateKey,
+                    });
                 }
             }
         });
@@ -106,36 +103,43 @@ class Ec2InstanceCreate {
         const listBucketsCommand = new client_s3_1.ListBucketsCommand({});
         return await this.s3client.send(listBucketsCommand);
     }
-    async createEc2Instance(account, maxCount, vCpu, ram, volumeSize, amiId) {
-        const groupId = await this.CreatEc2SecurityGroup(account);
-        const keyPairName = await this.CreatEc2KeyPair(account);
-        const instanceType = await Ec2InstanceCreate.selectInstanceType(vCpu, ram);
+    async createEc2Instance({ account, maxCount, vCpu, ram, volumeSize, amiId, }) {
+        await this.prepareEc2InstanceEnv(account, vCpu, ram);
         const runInstancesCommand = new client_ec2_1.RunInstancesCommand({
             MaxCount: maxCount,
             MinCount: 1,
             ImageId: amiId,
-            InstanceType: instanceType,
+            InstanceType: this.Ec2InstanceType,
             BlockDeviceMappings: [
                 {
                     Ebs: { VolumeType: "gp2", VolumeSize: volumeSize },
                     DeviceName: "/dev/sdh",
                 },
             ],
-            SecurityGroupIds: [groupId],
-            KeyName: keyPairName,
+            SecurityGroupIds: [this.securityGroupId],
+            KeyName: this.instanceKeyName,
         });
         const instancesCommand = await this.ec2Client.send(runInstancesCommand);
         return instancesCommand.Instances;
     }
+    async prepareEc2InstanceEnv(account, vCpu, ram) {
+        await this.CreatEc2SecurityGroup(account);
+        await this.CreatEc2KeyPair(account);
+        await this.selectInstanceType(vCpu, ram);
+    }
     async createEc2KeyPairAndImport(account, keyName) {
         const encoder = new TextEncoder();
         const { publicKey, privateKey } = await Promise.resolve(Ec2InstanceCreate.rsaKeyPair());
-        await this.formatPrivateKeyAndUpload(privateKey, account, encoder);
+        await this.formatPrivateKeyAndUpload({
+            privateKey: privateKey,
+            account: account,
+            encoder: encoder,
+        });
         const importKeyPairCommand = Ec2InstanceCreate.importFormattedPublic(publicKey, keyName, encoder);
         const keyPairCommandOutput = await this.ec2Client.send(importKeyPairCommand);
         return keyPairCommandOutput.KeyName;
     }
-    async createSecurityIfNotFound(securityGroupDescription, securityGroupName) {
+    async createSecurityGroupIfNotFound({ securityGroupName: securityGroupName, securityGroupDescription: securityGroupDescription, }) {
         const describeVpcsCommand = await this.ec2Client.send(new client_ec2_1.DescribeVpcsCommand({}));
         const createSecurityGroupCommand = new client_ec2_1.CreateSecurityGroupCommand({
             Description: securityGroupDescription,
@@ -145,7 +149,7 @@ class Ec2InstanceCreate {
         const createSecurityGroupCommandOutput = await this.ec2Client.send(createSecurityGroupCommand);
         return createSecurityGroupCommandOutput.GroupId;
     }
-    createBucketAndAttachPolicyAndUpload(bucketParams, bucket, account, privateKey) {
+    createBucketWithPolicyAndUpload({ bucketParams, bucket, account, privateKey, }) {
         this.s3client
             .send(new client_s3_1.CreateBucketCommand({ Bucket: bucketParams.Bucket }))
             .then(async () => {
@@ -155,9 +159,12 @@ class Ec2InstanceCreate {
             await this.s3Uploader(account, bucketParams, privateKey);
         });
     }
-    async formatPrivateKeyAndUpload(privateKey, account, encoder) {
+    async formatPrivateKeyAndUpload({ privateKey, account, encoder, }) {
         const privateKeyPem = sshpk.parsePrivateKey(privateKey, "pem");
-        await this.uploadPrivateKeyToS3(account, encoder.encode(privateKeyPem));
+        await this.uploadPrivateKeyToS3({
+            account: account,
+            privateKey: encoder.encode(privateKeyPem),
+        });
     }
     async attachS3AnonymousReadPolicy(bucket) {
         const readOnlyAnonUserPolicy = {
