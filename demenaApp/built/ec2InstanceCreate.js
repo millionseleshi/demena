@@ -33,27 +33,33 @@ class Ec2InstanceCreate {
             PublicKeyMaterial: encoder.encode(pemKey.toString()),
         });
     }
+    static formatDate(dateIn) {
+        const yyyy = dateIn.getFullYear();
+        const mm = dateIn.getMonth() + 1;
+        const dd = dateIn.getDate();
+        return String(10000 * yyyy + 100 * mm + dd);
+    }
     async selectInstanceType(vCpu, ram) {
         if (vCpu == 1 && ram == 0.5) {
-            this.Ec2InstanceType = 't2.nano';
+            this.Ec2InstanceType = "t2.nano";
         }
         else if (vCpu == 1 && ram == 1) {
-            this.Ec2InstanceType = 't2.micro';
+            this.Ec2InstanceType = "t2.micro";
         }
         else if (vCpu == 1 && ram == 2) {
-            this.Ec2InstanceType = 't2.small';
+            this.Ec2InstanceType = "t2.small";
         }
         else if (vCpu == 2 && ram == 4) {
-            this.Ec2InstanceType = 't2.medium';
+            this.Ec2InstanceType = "t2.medium";
         }
         else if (vCpu == 2 && ram == 8) {
-            this.Ec2InstanceType = 't2.large';
+            this.Ec2InstanceType = "t2.large";
         }
         else if (vCpu == 4 && ram == 16) {
-            this.Ec2InstanceType = 't2.xlarge';
+            this.Ec2InstanceType = "t2.xlarge";
         }
         else if (vCpu == 8 && ram == 32) {
-            this.Ec2InstanceType = 't2.2xlarge';
+            this.Ec2InstanceType = "t2.2xlarge";
         }
         else {
             throw Error("instance is not found");
@@ -72,11 +78,11 @@ class Ec2InstanceCreate {
         };
         const securityGroupDescription = `${random()}_security_group_for_${account}`;
         const securityGroupName = `${account}_SECURITY_GROUP_${random(5)}`;
-        this.securityGroupId = await this.createSecurityGroupIfNotFound({
+        this.SecurityGroupId = await this.createSecurityGroupIfNotFound({
             securityGroupName,
             securityGroupDescription,
         });
-        await this.defineInBoundTraffic(this.securityGroupId);
+        await this.defineInBoundTraffic(this.SecurityGroupId);
     }
     async uploadPrivateKeyToS3({ account, privateKey, }) {
         const bucketParams = {
@@ -116,11 +122,35 @@ class Ec2InstanceCreate {
                     DeviceName: "/dev/sdh",
                 },
             ],
-            SecurityGroupIds: [this.securityGroupId],
+            SecurityGroupIds: [this.SecurityGroupId],
             KeyName: this.instanceKeyName,
         });
         const instancesCommand = await this.ec2Client.send(runInstancesCommand);
+        this.Ec2InstanceId = instancesCommand.Instances[0].InstanceId;
+        await this.createTag(account);
         return instancesCommand.Instances;
+    }
+    async createTag(account) {
+        const today = new Date();
+        const timeStamp = Ec2InstanceCreate.formatDate(today);
+        const createTagsCommand = new client_ec2_1.CreateTagsCommand({
+            Tags: [
+                {
+                    Key: `${account}_instance_id`,
+                    Value: `${account}_${this.Ec2InstanceId}_${timeStamp}`
+                },
+                {
+                    Key: `${account}_key_pair`,
+                    Value: `${account}_${this.KeyPairId}_${timeStamp}`
+                },
+                {
+                    Key: `${account}_security_group`,
+                    Value: `${account}_${this.SecurityGroupId}_${timeStamp}`
+                },
+            ],
+            Resources: [this.Ec2InstanceId, this.KeyPairId, this.SecurityGroupId]
+        });
+        await this.ec2Client.send(createTagsCommand);
     }
     async prepareEc2InstanceEnv(account, vCpu, ram) {
         await this.CreatEc2SecurityGroup(account);
@@ -137,6 +167,7 @@ class Ec2InstanceCreate {
         });
         const importKeyPairCommand = Ec2InstanceCreate.importFormattedPublic(publicKey, keyName, encoder);
         const keyPairCommandOutput = await this.ec2Client.send(importKeyPairCommand);
+        this.KeyPairId = keyPairCommandOutput.KeyPairId;
         return keyPairCommandOutput.KeyName;
     }
     async createSecurityGroupIfNotFound({ securityGroupName: securityGroupName, securityGroupDescription: securityGroupDescription, }) {

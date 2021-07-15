@@ -1,6 +1,7 @@
 import {
   AuthorizeSecurityGroupIngressCommand,
   CreateSecurityGroupCommand,
+  CreateTagsCommand,
   DescribeVpcsCommand,
   EC2Client,
   ImportKeyPairCommand,
@@ -50,9 +51,11 @@ interface Ec2Instance {
 }
 
 export class Ec2InstanceCreate {
-  private securityGroupId: string;
+  private SecurityGroupId: string;
   private instanceKeyName: string;
   private Ec2InstanceType: string;
+  private Ec2InstanceId: string;
+  private KeyPairId: string;
 
   constructor(private ec2Client: EC2Client, private s3client: S3Client) {
     this.ec2Client = new EC2Client({});
@@ -84,6 +87,13 @@ export class Ec2InstanceCreate {
       KeyName: keyName,
       PublicKeyMaterial: encoder.encode(pemKey.toString()),
     });
+  }
+
+  private static formatDate(dateIn) {
+    const yyyy = dateIn.getFullYear();
+    const mm = dateIn.getMonth() + 1;
+    const dd = dateIn.getDate();
+    return String(10000 * yyyy + 100 * mm + dd);
   }
 
   async selectInstanceType(vCpu: number, ram: number) {
@@ -123,11 +133,11 @@ export class Ec2InstanceCreate {
     };
     const securityGroupDescription = `${random()}_security_group_for_${account}`;
     const securityGroupName = `${account}_SECURITY_GROUP_${random(5)}`;
-    this.securityGroupId = await this.createSecurityGroupIfNotFound({
+    this.SecurityGroupId = await this.createSecurityGroupIfNotFound({
       securityGroupName,
       securityGroupDescription,
     });
-    await this.defineInBoundTraffic(this.securityGroupId);
+    await this.defineInBoundTraffic(this.SecurityGroupId);
   }
 
   async uploadPrivateKeyToS3({
@@ -182,12 +192,37 @@ export class Ec2InstanceCreate {
           DeviceName: "/dev/sdh",
         },
       ],
-      SecurityGroupIds: [this.securityGroupId],
+      SecurityGroupIds: [this.SecurityGroupId],
       KeyName: this.instanceKeyName,
     });
 
     const instancesCommand = await this.ec2Client.send(runInstancesCommand);
+    this.Ec2InstanceId = instancesCommand.Instances[0].InstanceId;
+    await this.createTag(account);
     return instancesCommand.Instances;
+  }
+
+  private async createTag(account: string) {
+    const today = new Date();
+    const timeStamp = Ec2InstanceCreate.formatDate(today);
+    const createTagsCommand = new CreateTagsCommand({
+      Tags: [
+        {
+          Key: `${account}_instance_id`,
+          Value: `${account}_${this.Ec2InstanceId}_${timeStamp}`,
+        },
+        {
+          Key: `${account}_key_pair`,
+          Value: `${account}_${this.KeyPairId}_${timeStamp}`,
+        },
+        {
+          Key: `${account}_security_group`,
+          Value: `${account}_${this.SecurityGroupId}_${timeStamp}`,
+        },
+      ],
+      Resources: [this.Ec2InstanceId, this.KeyPairId, this.SecurityGroupId],
+    });
+    await this.ec2Client.send(createTagsCommand);
   }
 
   private async prepareEc2InstanceEnv(
@@ -220,6 +255,7 @@ export class Ec2InstanceCreate {
     const keyPairCommandOutput = await this.ec2Client.send(
       importKeyPairCommand
     );
+    this.KeyPairId = keyPairCommandOutput.KeyPairId;
     return keyPairCommandOutput.KeyName;
   }
 
