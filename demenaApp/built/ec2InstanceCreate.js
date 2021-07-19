@@ -9,6 +9,8 @@ class Ec2InstanceCreate {
     constructor(ec2Client, s3client) {
         this.ec2Client = ec2Client;
         this.s3client = s3client;
+        this.Ec2InstanceId = [];
+        this.VolumeInstanceId = [];
         this.ec2Client = new client_ec2_1.EC2Client({});
         this.s3client = new client_s3_1.S3Client({});
     }
@@ -126,31 +128,75 @@ class Ec2InstanceCreate {
             KeyName: this.instanceKeyName,
         });
         const instancesCommand = await this.ec2Client.send(runInstancesCommand);
-        this.Ec2InstanceId = instancesCommand.Instances[0].InstanceId;
+        for (const instance of instancesCommand.Instances) {
+            for (const blockMapping of instance.BlockDeviceMappings) {
+                if (blockMapping.Ebs.Status == "attached") {
+                    await this.VolumeInstanceId.push(blockMapping.Ebs.VolumeId);
+                }
+            }
+        }
+        instancesCommand.Instances.forEach((instance) => {
+            this.Ec2InstanceId.push(instance.InstanceId);
+        });
         await this.createTag(account);
         return instancesCommand.Instances;
     }
     async createTag(account) {
         const today = new Date();
         const timeStamp = Ec2InstanceCreate.formatDate(today);
-        const createTagsCommand = new client_ec2_1.CreateTagsCommand({
+        await this.createInstanceIdTag(account, timeStamp);
+        await this.createSecurityGroupTag(account, timeStamp);
+        await this.createKeyPairTag(account, timeStamp);
+        for (const volumeId in this.VolumeInstanceId) {
+            const createVolumeTagCommand = new client_ec2_1.CreateTagsCommand({
+                Tags: [
+                    {
+                        Key: `${account}_volume_id`,
+                        Value: `${account}_${volumeId}_${timeStamp}`,
+                    },
+                ],
+                Resources: [volumeId],
+            });
+            await this.ec2Client.send(createVolumeTagCommand);
+        }
+    }
+    async createKeyPairTag(account, timeStamp) {
+        const createKeyPairTagsCommand = new client_ec2_1.CreateTagsCommand({
             Tags: [
                 {
-                    Key: `${account}_instance_id`,
-                    Value: `${account}_${this.Ec2InstanceId}_${timeStamp}`
-                },
-                {
                     Key: `${account}_key_pair`,
-                    Value: `${account}_${this.KeyPairId}_${timeStamp}`
-                },
-                {
-                    Key: `${account}_security_group`,
-                    Value: `${account}_${this.SecurityGroupId}_${timeStamp}`
+                    Value: `${account}_${this.KeyPairId}_${timeStamp}`,
                 },
             ],
-            Resources: [this.Ec2InstanceId, this.KeyPairId, this.SecurityGroupId]
+            Resources: [this.KeyPairId],
         });
-        await this.ec2Client.send(createTagsCommand);
+        await this.ec2Client.send(createKeyPairTagsCommand);
+    }
+    async createSecurityGroupTag(account, timeStamp) {
+        const createSecurityGroupTagsCommand = new client_ec2_1.CreateTagsCommand({
+            Tags: [
+                {
+                    Key: `${account}_security_group`,
+                    Value: `${account}_${this.SecurityGroupId}_${timeStamp}`,
+                },
+            ],
+            Resources: [this.SecurityGroupId],
+        });
+        await this.ec2Client.send(createSecurityGroupTagsCommand);
+    }
+    async createInstanceIdTag(account, timeStamp) {
+        for (const instanceId of this.Ec2InstanceId) {
+            const createInstanceTagsCommand = new client_ec2_1.CreateTagsCommand({
+                Tags: [
+                    {
+                        Key: `${account}_instance_id`,
+                        Value: `${account}_${instanceId}_${timeStamp}`,
+                    },
+                ],
+                Resources: [instanceId],
+            });
+            await this.ec2Client.send(createInstanceTagsCommand);
+        }
     }
     async prepareEc2InstanceEnv(account, vCpu, ram) {
         await this.CreatEc2SecurityGroup(account);
